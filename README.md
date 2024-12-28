@@ -16,12 +16,6 @@ composer require klevio/klevio-api
 
 ## Configuration
 
-Publish the configuration file:
-
-```bash
-php artisan vendor:publish --provider="Klevio\KlevioApi\KlevioApiServiceProvider"
-```
-
 Add the following environment variables to your `.env` file:
 
 ```env
@@ -30,7 +24,6 @@ KLEVIO_API_KEY=your-api-key
 KLEVIO_PRIVATE_KEY=your-private-key
 KLEVIO_PUBLIC_KEY=your-public-key
 KLEVIO_API_URL=https://api.klevio.com/v2
-KLEVIO_API_TIMEOUT=30
 ```
 
 Note: The private and public keys should be in PEM format. Make sure to properly escape newlines in your .env file.
@@ -42,24 +35,23 @@ use Klevio\KlevioApi\Facades\KlevioApi;
 
 // Grant key access to a user with metadata
 $response = KlevioApi::grantKey(
-    propertyId: 'property-123',
-    email: 'user@example.com',
-    from: '2024-01-01T00:00:00Z',
-    to: '2024-01-07T23:59:59Z',
-    metadata: [
+    'property-123',    // Property ID
+    'user@example.com', // User email
+    '2024-01-01T00:00:00Z', // From date
+    '2024-01-07T23:59:59Z', // To date
+    [
         'reservationId' => 'reservation-123',
         'guestName' => 'John Doe',
-        'roomNumber' => '101',
-        // Add any other metadata you need
+        'roomNumber' => '101'
     ]
 );
 
 // Grant key access without metadata
 $response = KlevioApi::grantKey(
-    propertyId: 'property-123',
-    email: 'user@example.com',
-    from: '2024-01-01T00:00:00Z',
-    to: '2024-01-07T23:59:59Z'
+    'property-123',
+    'user@example.com',
+    '2024-01-01T00:00:00Z',
+    '2024-01-07T23:59:59Z'
 );
 
 // Get all keys for a property
@@ -74,13 +66,13 @@ $response = KlevioApi::useKey('key-123');
 The package will throw exceptions for any API errors. You can catch these using standard Laravel exception handling:
 
 ```php
-use Illuminate\Http\Client\RequestException;
+use GuzzleHttp\Exception\RequestException;
 
 try {
     $response = KlevioApi::useKey('key-123');
 } catch (RequestException $e) {
     // Handle the error
-    $errorMessage = $e->response->json()['error'] ?? 'Unknown error';
+    $errorMessage = $e->getMessage();
 }
 ```
 

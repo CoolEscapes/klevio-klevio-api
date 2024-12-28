@@ -2,52 +2,109 @@
 
 namespace Klevio\KlevioApi;
 
-use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Http;
-use Lcobucci\JWT\Configuration as JwtConfig;
+use GuzzleHttp\Client;
+use Illuminate\Support\Facades\Log;
+use Lcobucci\JWT\Configuration;
 use Lcobucci\JWT\Signer\Ecdsa\Sha256;
 use Lcobucci\JWT\Signer\Key\InMemory;
-use DateTimeImmutable;
 
 class KlevioApi
 {
-    protected string $clientId;
-    protected string $apiKey;
-    protected string $privateKey;
-    protected string $publicKey;
-    protected string $baseUrl;
-    protected int $timeout;
-    protected JwtConfig $jwtConfig;
+    private $client;
+    private $apiUrl;
 
     public function __construct()
     {
-        $this->clientId = Config::get('klevio-api.client_id');
-        $this->apiKey = Config::get('klevio-api.api_key');
-        $this->privateKey = str_replace('\n', "\n", Config::get('klevio-api.private_key'));
-        $this->publicKey = str_replace('\n', "\n", Config::get('klevio-api.public_key'));
-        $this->baseUrl = Config::get('klevio-api.base_url');
-        $this->timeout = Config::get('klevio-api.timeout', 30);
+        $this->client = new Client;
+        $this->apiUrl = env('KLEVIO_API_URL').'/rpc';
+    }
 
-        $this->jwtConfig = JwtConfig::forAsymmetricSigner(
+    /**
+     * Make an RPC request to the Klevio API
+     */
+    public function post($method, $params = [])
+    {
+        $rpcPayload = [
+            'id' => uniqid(),
+            'method' => $method,
+            'params' => $params,
+        ];
+
+        $jwt = $this->generateJwt($rpcPayload);
+
+        $response = $this->client->post($this->apiUrl, [
+            'headers' => [
+                'X-KeyID' => env('KLEVIO_API_KEY'),
+                'Content-Type' => 'application/jwt',
+            ],
+            'body' => $jwt,
+        ]);
+
+        $rawResponse = $this->decodeJwtResponse($response->getBody()->getContents());
+
+        Log::info('RPC Response', ['response' => $rawResponse]);
+
+        return $rawResponse;
+    }
+
+    /**
+     * Generate a JWT token for API authentication
+     */
+    protected function generateJwt(array $rpcPayload): string
+    {
+        $privateKey = str_replace('\n', "\n", env('KLEVIO_PRIVATE_KEY'));
+        $publicKey = str_replace('\n', "\n", env('KLEVIO_PUBLIC_KEY'));
+        
+        $config = Configuration::forAsymmetricSigner(
             new Sha256(),
-            InMemory::plainText($this->privateKey),
-            InMemory::plainText($this->publicKey)
+            InMemory::plainText($privateKey),
+            InMemory::plainText($publicKey)
         );
+
+        $now = new \DateTimeImmutable;
+
+        return $config->builder()
+            ->issuedBy(env('KLEVIO_CLIENT_ID'))
+            ->permittedFor('klevio-api/v2')
+            ->issuedAt($now)
+            ->expiresAt($now->modify('+30 seconds'))
+            ->withHeader('kid', env('KLEVIO_API_KEY'))
+            ->withClaim('rpc', $rpcPayload)
+            ->getToken($config->signer(), $config->signingKey())
+            ->toString();
+    }
+
+    /**
+     * Decode a JWT response from the API
+     */
+    protected function decodeJwtResponse($jwtResponse)
+    {
+        $publicKey = str_replace('\n', "\n", env('KLEVIO_PUBLIC_KEY'));
+        $privateKey = str_replace('\n', "\n", env('KLEVIO_PRIVATE_KEY'));
+
+        $config = Configuration::forAsymmetricSigner(
+            new Sha256(),
+            InMemory::plainText($privateKey),
+            InMemory::plainText($publicKey)
+        );
+
+        $token = $config->parser()->parse($jwtResponse);
+        return $token->claims()->get('rpc');
     }
 
     /**
      * Grant key access to a user
-     *
-     * @param string $propertyId
-     * @param string $email
-     * @param string $from
-     * @param string $to
-     * @param array $metadata Optional metadata for the key grant
+     * 
+     * @param string $propertyId Property ID
+     * @param string $email User email
+     * @param string $from Start date (ISO 8601 format)
+     * @param string $to End date (ISO 8601 format)
+     * @param array $metadata Additional metadata for the key
      * @return array
      */
-    public function grantKey(string $propertyId, string $email, string $from, string $to, array $metadata = []): array
+    public function grantKey($propertyId, $email, $from, $to, $metadata = [])
     {
-        return $this->makeRpcCall('grantKey', [
+        return $this->post('grantKey', [
             'source' => [
                 '$type' => 'property',
                 'id' => $propertyId,
@@ -66,13 +123,10 @@ class KlevioApi
 
     /**
      * Get all keys for a property
-     *
-     * @param string $propertyId
-     * @return array
      */
-    public function getKeys(string $propertyId): array
+    public function getKeys($propertyId)
     {
-        return $this->makeRpcCall('getKeys', [
+        return $this->post('getKeys', [
             'source' => [
                 '$type' => 'property',
                 'id' => $propertyId,
@@ -82,76 +136,11 @@ class KlevioApi
 
     /**
      * Use a key (lock/unlock)
-     *
-     * @param string $keyId
-     * @return array
      */
-    public function useKey(string $keyId): array
+    public function useKey($keyId)
     {
-        return $this->makeRpcCall('useKey', [
+        return $this->post('useKey', [
             'key' => $keyId,
         ]);
-    }
-
-    /**
-     * Make an RPC call to the Klevio API
-     *
-     * @param string $method
-     * @param array $params
-     * @return array
-     */
-    protected function makeRpcCall(string $method, array $params = []): array
-    {
-        $rpcPayload = [
-            'id' => uniqid(),
-            'method' => $method,
-            'params' => $params,
-        ];
-
-        $jwt = $this->generateJwt($rpcPayload);
-
-        $response = Http::timeout($this->timeout)
-            ->withHeaders([
-                'X-KeyID' => $this->apiKey,
-                'Content-Type' => 'application/jwt',
-            ])
-            ->post($this->baseUrl . '/rpc', $jwt);
-
-        $response->throw();
-
-        return $this->decodeJwtResponse($response->body());
-    }
-
-    /**
-     * Generate a JWT token for API authentication
-     *
-     * @param array $rpcPayload
-     * @return string
-     */
-    protected function generateJwt(array $rpcPayload): string
-    {
-        $now = new DateTimeImmutable();
-
-        return $this->jwtConfig->builder()
-            ->issuedBy($this->clientId)
-            ->permittedFor(Config::get('klevio-api.jwt_audience'))
-            ->issuedAt($now)
-            ->expiresAt($now->modify('+' . Config::get('klevio-api.jwt_lifetime') . ' seconds'))
-            ->withHeader('kid', $this->apiKey)
-            ->withClaim('rpc', $rpcPayload)
-            ->getToken($this->jwtConfig->signer(), $this->jwtConfig->signingKey())
-            ->toString();
-    }
-
-    /**
-     * Decode a JWT response from the API
-     *
-     * @param string $jwtResponse
-     * @return array
-     */
-    protected function decodeJwtResponse(string $jwtResponse): array
-    {
-        $token = $this->jwtConfig->parser()->parse($jwtResponse);
-        return $token->claims()->get('rpc');
     }
 }
