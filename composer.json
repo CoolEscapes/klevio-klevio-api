@@ -18,8 +18,7 @@
         }
     ],
     "require": {
-        "php": "^8.1",
-        "illuminate/contracts": "^10.0", 
+        "php": "^8.1", 
         "lcobucci/jwt": "^4.0",
         "guzzlehttp/guzzle": "^7.8"
     },
