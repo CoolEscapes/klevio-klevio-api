@@ -47,8 +47,7 @@ composer require klevio/klevio-api
    - Visit [Klevio Scheduler Portal](https://operations.klevio.net/scheduler/signup)
    - Complete the registration process
    - Obtain your API credentials
-
-   ![Klevio API Integration](assets/image.png)
+ 
 
 2️⃣ **Generate Security Keys**
    ```bash
