@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Klevio API Integration](assets/image.png)
+
 
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/klevio/klevio-api.svg?style=for-the-badge)](https://packagist.org/packages/klevio/klevio-api)
 [![Total Downloads](https://img.shields.io/packagist/dt/klevio/klevio-api.svg?style=for-the-badge)](https://packagist.org/packages/klevio/klevio-api)
@@ -47,6 +47,8 @@ composer require klevio/klevio-api
    - Visit [Klevio Scheduler Portal](https://operations.klevio.net/scheduler/signup)
    - Complete the registration process
    - Obtain your API credentials
+
+   ![Klevio API Integration](assets/image.png)
 
 2️⃣ **Generate Security Keys**
    ```bash
